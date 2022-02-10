@@ -1,0 +1,17 @@
+
+
+DROP TABLE IF EXISTS foo;
+
+CREATE TABLE foo (
+  id INT NOT NULL PRIMARY KEY,
+  text VARCHAR(50) NOT NULL
+);
+ 
+DROP TABLE IF EXISTS foo_seq;
+
+CREATE TABLE foo_seq (
+  next_val INT NOT NULL PRIMARY KEY
+);
+
+INSERT INTO foo_seq (next_val) VALUES(1);
+
