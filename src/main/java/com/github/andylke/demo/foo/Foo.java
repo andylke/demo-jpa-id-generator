@@ -17,7 +17,10 @@ public class Foo {
   @GenericGenerator(
       name = "foo_seq",
       strategy = "org.hibernate.id.enhanced.SequenceStyleGenerator",
-      parameters = {@Parameter(name = "sequence_name", value = "foo_seq")})
+      parameters = {
+        @Parameter(name = "sequence_name", value = "foo_seq"),
+        @Parameter(name = "value_column", value = "next_id")
+      })
   private int id;
 
   private String text;

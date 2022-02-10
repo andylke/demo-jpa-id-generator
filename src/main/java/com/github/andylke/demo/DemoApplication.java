@@ -26,7 +26,7 @@ public class DemoApplication {
 
   @EventListener({ApplicationReadyEvent.class})
   void ready() {
-    final CountDownLatch countDownLatch = new CountDownLatch(20);
+    final CountDownLatch countDownLatch = new CountDownLatch(10);
     for (int countDown = (int) countDownLatch.getCount(); countDown > 0; countDown--) {
       new Thread(
               () -> {

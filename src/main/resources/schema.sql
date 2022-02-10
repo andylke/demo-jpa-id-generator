@@ -10,8 +10,8 @@ CREATE TABLE foo (
 DROP TABLE IF EXISTS foo_seq;
 
 CREATE TABLE foo_seq (
-  next_val INT NOT NULL PRIMARY KEY
+  next_id INT NOT NULL PRIMARY KEY
 );
 
-INSERT INTO foo_seq (next_val) VALUES(1);
+INSERT INTO foo_seq (next_id) VALUES(1);
 
