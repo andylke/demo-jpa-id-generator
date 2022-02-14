@@ -122,6 +122,8 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
    */
   public static final String OPT_PARAM = "optimizer";
 
+  private static final int DEFAULT_INSERT_RETRY_ATTEMPTS = 3;
+
   private boolean storeLastUsedValue;
 
   private Type identifierType;
@@ -260,6 +262,7 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
 
                         final IntegralDataTypeHolder initialValue = prepareInitialValue();
                         boolean hasRow = false;
+                        int retry = DEFAULT_INSERT_RETRY_ATTEMPTS;
                         do {
                           hasRow =
                               executeSelectForUpdateQuery(
@@ -278,13 +281,24 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
                                   initialValue);
                               hasRow = true;
                             } catch (SQLIntegrityConstraintViolationException e) {
-                              LOG.warn(
-                                  "Unable to insert into generator table '"
-                                      + renderedTableName
-                                      + "' with segment values '"
-                                      + segmentValues
-                                      + "'",
-                                  e);
+                              if (--retry == 0) {
+                                LOG.error(
+                                    "Unable to insert into generator table '"
+                                        + renderedTableName
+                                        + "' with segment values '"
+                                        + segmentValues
+                                        + "'",
+                                    e);
+                                throw e;
+                              } else {
+                                LOG.warn(
+                                    "Unable to insert into generator table '"
+                                        + renderedTableName
+                                        + "' with segment values '"
+                                        + segmentValues
+                                        + "'",
+                                    e);
+                              }
                             }
                           }
                         } while (hasRow == false);
