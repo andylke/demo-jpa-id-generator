@@ -10,6 +10,8 @@ public class BazId implements Serializable {
 
   private String code;
 
+  private String languageCode;
+
   public int getId() {
     return id;
   }
@@ -24,5 +26,13 @@ public class BazId implements Serializable {
 
   public void setCode(String code) {
     this.code = code;
+  }
+
+  public String getLanguageCode() {
+    return languageCode;
+  }
+
+  public void setLanguageCode(String languageCode) {
+    this.languageCode = languageCode;
   }
 }

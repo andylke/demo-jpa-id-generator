@@ -12,7 +12,10 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.stream.Stream;
 
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
@@ -68,27 +71,29 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   /** The default {@link #TABLE_PARAM} value */
   public static final String DEFAULT_TABLE = "hibernate_sequences";
 
+  public static final String PARAM_SEPARATOR_STRING = ",";
+
   /**
    * The name of the column which holds the segment key. The segment defines the different buckets
    * (segments) of values currently tracked in the table. The default value is {@link
    * #DEFAULT_SEGMENT_COLUMN_NAME}
    */
-  public static final String SEGMENT_COLUMN_PARAM = "segment_column_name";
+  public static final String SEGMENT_COLUMN_NAMES_PARAM = "segment_column_names";
 
-  /** The default {@link #SEGMENT_COLUMN_PARAM} value */
+  /** The default {@link #SEGMENT_COLUMN_NAMES_PARAM} value */
   public static final String DEFAULT_SEGMENT_COLUMN_NAME = "sequence_name";
 
   /**
-   * Indicates the length of the column defined by {@link #SEGMENT_COLUMN_PARAM}. Used in schema
-   * export. The default value is {@link #DEFAULT_SEGMENT_COLUMN_SIZE}
+   * Indicates the length of the column defined by {@link #SEGMENT_COLUMN_NAMES_PARAM}. Used in
+   * schema export. The default value is {@link #DEFAULT_SEGMENT_COLUMN_SIZE}
    */
-  public static final String SEGMENT_COLUMN_SIZE_PARAM = "segment_column_size";
+  public static final String SEGMENT_COLUMN_SIZES_PARAM = "segment_column_sizes";
 
-  /** The default {@link #SEGMENT_COLUMN_SIZE_PARAM} value */
-  public static final int DEFAULT_SEGMENT_COLUMN_SIZE = 255;
+  /** The default {@link #SEGMENT_COLUMN_SIZES_PARAM} value */
+  public static final String DEFAULT_SEGMENT_COLUMN_SIZE = "255";
 
   /** The name of the object field name used as the segment value. */
-  public static final String SEGMENT_VALUE_FIELD_NAME_PARAM = "segment_value_field_name";
+  public static final String SEGMENT_VALUE_FIELD_NAMES_PARAM = "segment_value_field_names";
 
   /**
    * The name of column which holds the sequence value. The default value is {@link
@@ -124,9 +129,9 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   private QualifiedName qualifiedTableName;
   private String renderedTableName;
 
-  private String segmentColumnName;
-  private int segmentColumnSize;
-  private String segmentValueFieldName;
+  private String[] segmentColumnNames;
+  private Integer[] segmentColumnSizes;
+  private String[] segmentValueFieldNames;
 
   private String valueColumnName;
   private int initialValue;
@@ -154,9 +159,15 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
 
     qualifiedTableName = determineGeneratorTableName(params, jdbcEnvironment, serviceRegistry);
 
-    segmentColumnName = determineSegmentColumnName(params, jdbcEnvironment);
-    segmentColumnSize = determineSegmentColumnSize(params);
-    segmentValueFieldName = determineSegmentValueFieldName(params);
+    segmentColumnNames = determineSegmentColumnNames(params, jdbcEnvironment);
+    segmentColumnSizes = determineSegmentColumnSizes(params);
+    if (segmentColumnSizes.length != segmentColumnNames.length) {
+      throw new IllegalStateException("");
+    }
+    segmentValueFieldNames = determineSegmentValueFieldNames(params);
+    if (segmentValueFieldNames.length != segmentColumnNames.length) {
+      throw new IllegalStateException("");
+    }
 
     valueColumnName = determineValueColumnName(params, jdbcEnvironment);
     initialValue = determineInitialValue(params);
@@ -187,19 +198,22 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     Table table = namespace.locateTable(qualifiedTableName.getObjectName());
     if (table == null) {
       table = namespace.createTable(qualifiedTableName.getObjectName(), false);
-
-      final Column segmentColumn =
-          new ExportableColumn(
-              database,
-              table,
-              segmentColumnName,
-              StringType.INSTANCE,
-              dialect.getTypeName(Types.VARCHAR, segmentColumnSize, 0, 0));
-      segmentColumn.setNullable(false);
-      table.addColumn(segmentColumn);
-
       table.setPrimaryKey(new PrimaryKey(table));
-      table.getPrimaryKey().addColumn(segmentColumn);
+
+      for (int segmentColumnIndex = 0;
+          segmentColumnIndex < segmentColumnNames.length;
+          segmentColumnIndex++) {
+        final Column segmentColumn =
+            new ExportableColumn(
+                database,
+                table,
+                segmentColumnNames[segmentColumnIndex],
+                StringType.INSTANCE,
+                dialect.getTypeName(Types.VARCHAR, segmentColumnSizes[segmentColumnIndex], 0, 0));
+        segmentColumn.setNullable(false);
+        table.addColumn(segmentColumn);
+        table.getPrimaryKey().addColumn(segmentColumn);
+      }
 
       final Column valueColumn =
           new ExportableColumn(database, table, valueColumnName, LongType.INSTANCE);
@@ -229,7 +243,7 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
             .getSqlStatementLogger();
     final SessionEventListenerManager statsCollector = session.getEventListenerManager();
 
-    String segmentValue = getSegmentValue(object);
+    final String[] segmentValues = getSegmentValues(object);
 
     return optimizer.generate(
         new AccessCallback() {
@@ -251,7 +265,7 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
                               executeSelectForUpdateQuery(
                                   statementLogger,
                                   statsCollector,
-                                  segmentValue,
+                                  segmentValues,
                                   connection,
                                   initialValue);
                           if (hasRow == false) {
@@ -259,15 +273,17 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
                               executeInsertQuery(
                                   statementLogger,
                                   statsCollector,
-                                  segmentValue,
+                                  segmentValues,
                                   connection,
                                   initialValue);
                               hasRow = true;
                             } catch (SQLIntegrityConstraintViolationException e) {
                               LOG.warn(
-                                  "Unable to insert into generator table ["
+                                  "Unable to insert into generator table '"
                                       + renderedTableName
-                                      + "]",
+                                      + "' with segment values '"
+                                      + segmentValues
+                                      + "'",
                                   e);
                             }
                           }
@@ -276,7 +292,11 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
                         final IntegralDataTypeHolder updateValue =
                             prepareIncrementedValue(initialValue);
                         executeUpdateQuery(
-                            statementLogger, statsCollector, segmentValue, connection, updateValue);
+                            statementLogger,
+                            statsCollector,
+                            segmentValues,
+                            connection,
+                            updateValue);
 
                         if (storeLastUsedValue) {
                           return initialValue.increment();
@@ -332,27 +352,80 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     }
   }
 
-  protected String determineSegmentColumnName(Properties params, JdbcEnvironment jdbcEnvironment) {
-    final String name =
-        ConfigurationHelper.getString(SEGMENT_COLUMN_PARAM, params, DEFAULT_SEGMENT_COLUMN_NAME);
-    return jdbcEnvironment
-        .getIdentifierHelper()
-        .toIdentifier(name)
-        .render(jdbcEnvironment.getDialect());
-  }
-
-  protected String determineSegmentValueFieldName(Properties params) {
-    final String segmentValueFieldName = params.getProperty(SEGMENT_VALUE_FIELD_NAME_PARAM);
-    if (StringHelper.isEmpty(segmentValueFieldName)) {
-      throw new ParameterNotFoundException(
-          "Required parameter '" + SEGMENT_VALUE_FIELD_NAME_PARAM + "'");
+  protected String[] determineSegmentColumnNames(
+      Properties params, JdbcEnvironment jdbcEnvironment) {
+    final String segmentColumnNamesString =
+        ConfigurationHelper.getString(
+            SEGMENT_COLUMN_NAMES_PARAM, params, DEFAULT_SEGMENT_COLUMN_NAME);
+    final String[] segmentColumnNames =
+        StringUtils.splitPreserveAllTokens(segmentColumnNamesString, PARAM_SEPARATOR_STRING);
+    if (ArrayUtils.isEmpty(segmentColumnNames) || StringUtils.isAnyBlank(segmentColumnNames)) {
+      throw new IllegalStateException(
+          "Parameter '"
+              + SEGMENT_COLUMN_NAMES_PARAM
+              + "' must not be empty or contains any empty String");
     }
-    return segmentValueFieldName;
+
+    return Stream.of(segmentColumnNames)
+        .map(
+            segmentColumnName ->
+                jdbcEnvironment
+                    .getIdentifierHelper()
+                    .toIdentifier(StringUtils.trimToEmpty(segmentColumnName))
+                    .render(jdbcEnvironment.getDialect()))
+        .toArray(size -> new String[size]);
   }
 
-  protected int determineSegmentColumnSize(Properties params) {
-    return ConfigurationHelper.getInt(
-        SEGMENT_COLUMN_SIZE_PARAM, params, DEFAULT_SEGMENT_COLUMN_SIZE);
+  protected Integer[] determineSegmentColumnSizes(Properties params) {
+    final String segmentColumnSizesString =
+        ConfigurationHelper.getString(
+            SEGMENT_COLUMN_SIZES_PARAM, params, DEFAULT_SEGMENT_COLUMN_SIZE);
+    final String[] segmentColumnSizes =
+        StringUtils.splitPreserveAllTokens(segmentColumnSizesString, PARAM_SEPARATOR_STRING);
+    if (ArrayUtils.isEmpty(segmentColumnSizes) || StringUtils.isAnyBlank(segmentColumnSizes)) {
+      throw new IllegalStateException(
+          "Parameter '"
+              + SEGMENT_COLUMN_SIZES_PARAM
+              + "' must not be empty or contains any empty String");
+    }
+    if (segmentColumnSizes.length != segmentColumnNames.length) {
+      throw new IllegalStateException(
+          "Number of elements in parameter '"
+              + SEGMENT_COLUMN_SIZES_PARAM
+              + "' and '"
+              + SEGMENT_COLUMN_NAMES_PARAM
+              + "' must be equals");
+    }
+
+    return Stream.of(segmentColumnSizes)
+        .map(segmentColumnSize -> Integer.parseUnsignedInt(StringUtils.trim(segmentColumnSize)))
+        .toArray(size -> new Integer[size]);
+  }
+
+  protected String[] determineSegmentValueFieldNames(Properties params) {
+    final String segmentValueFieldNamesString =
+        ConfigurationHelper.getString(SEGMENT_VALUE_FIELD_NAMES_PARAM, params);
+    final String[] segmentValueFieldNames =
+        StringUtils.splitPreserveAllTokens(segmentValueFieldNamesString, PARAM_SEPARATOR_STRING);
+    if (ArrayUtils.isEmpty(segmentValueFieldNames)
+        || StringUtils.isAnyBlank(segmentValueFieldNames)) {
+      throw new IllegalStateException(
+          "Parameter '"
+              + SEGMENT_VALUE_FIELD_NAMES_PARAM
+              + "' must not be empty or contains any empty String");
+    }
+    if (segmentValueFieldNames.length != segmentColumnNames.length) {
+      throw new IllegalStateException(
+          "Number of elements in parameter '"
+              + SEGMENT_VALUE_FIELD_NAMES_PARAM
+              + "' and '"
+              + SEGMENT_COLUMN_NAMES_PARAM
+              + "' must be equals");
+    }
+
+    return Stream.of(segmentValueFieldNames)
+        .map(segmentValueFieldName -> StringUtils.trimToEmpty(segmentValueFieldName))
+        .toArray(size -> new String[size]);
   }
 
   protected String determineValueColumnName(Properties params, JdbcEnvironment jdbcEnvironment) {
@@ -374,16 +447,27 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
 
   protected String buildSelectForUpdateQuery(Dialect dialect) {
     final String alias = "tbl";
-    final String query =
-        "select "
-            + StringHelper.qualify(alias, valueColumnName)
-            + " from "
-            + renderedTableName
-            + ' '
-            + alias
-            + " where "
-            + StringHelper.qualify(alias, segmentColumnName)
-            + "=?";
+    final StringBuilder queryBuilder =
+        new StringBuilder()
+            .append("select ")
+            .append(StringHelper.qualify(alias, valueColumnName))
+            .append(" from ")
+            .append(renderedTableName)
+            .append(" ")
+            .append(alias)
+            .append(" where ");
+    final int maxSegmentColumnIndex = segmentColumnNames.length - 1;
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder
+          .append(StringHelper.qualify(alias, segmentColumnNames[segmentColumnIndex]))
+          .append("=?");
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+      queryBuilder.append(" and ");
+    }
+    final String query = queryBuilder.toString();
+
     final LockOptions lockOptions = new LockOptions(LockMode.PESSIMISTIC_WRITE);
     lockOptions.setAliasSpecificLockMode(alias, LockMode.PESSIMISTIC_WRITE);
     final Map<String, String[]> updateTargetColumnsMap =
@@ -392,25 +476,44 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   }
 
   protected String buildUpdateQuery() {
-    return "update "
-        + renderedTableName
-        + " set "
-        + valueColumnName
-        + "=? "
-        + " where "
-        + segmentColumnName
-        + "=?";
+    final StringBuilder queryBuilder =
+        new StringBuilder()
+            .append("update ")
+            .append(renderedTableName)
+            .append(" set ")
+            .append(valueColumnName)
+            .append("=?")
+            .append(" where ");
+    final int maxSegmentColumnIndex = segmentColumnNames.length - 1;
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder.append(segmentColumnNames[segmentColumnIndex]).append("=?");
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+      queryBuilder.append(" and ");
+    }
+    return queryBuilder.toString();
   }
 
   protected String buildInsertQuery() {
-    return "insert into "
-        + renderedTableName
-        + " ("
-        + segmentColumnName
-        + ", "
-        + valueColumnName
-        + ") "
-        + " values (?,?)";
+    final StringBuilder queryBuilder =
+        new StringBuilder().append("insert into ").append(renderedTableName).append(" (");
+    final int maxSegmentColumnIndex = segmentColumnNames.length - 1;
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder.append(segmentColumnNames[segmentColumnIndex]).append(", ");
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+    }
+    queryBuilder.append(valueColumnName).append(")").append(" values (");
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder.append("?, ");
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+    }
+    queryBuilder.append("?)");
+    return queryBuilder.toString();
   }
 
   private IntegralDataTypeHolder prepareInitialValue() {
@@ -436,16 +539,20 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     return updateValue;
   }
 
-  private boolean executeSelectForUpdateQuery(
+  protected boolean executeSelectForUpdateQuery(
       final SqlStatementLogger statementLogger,
       final SessionEventListenerManager statsCollector,
-      final String segmentValue,
+      final String[] segmentValues,
       final Connection connection,
       final IntegralDataTypeHolder initialValue)
       throws SQLException {
     try (PreparedStatement selectForUpdatePS =
         prepareStatement(connection, selectForUpdateQuery, statementLogger, statsCollector)) {
-      selectForUpdatePS.setString(1, segmentValue);
+      for (int segmentColumnIndex = 0;
+          segmentColumnIndex < segmentColumnNames.length;
+          segmentColumnIndex++) {
+        selectForUpdatePS.setString(segmentColumnIndex + 1, segmentValues[segmentColumnIndex]);
+      }
       final ResultSet selectForUpdateRS = executeQuery(selectForUpdatePS, statsCollector);
       if (selectForUpdateRS.next() == false) {
         return false;
@@ -464,33 +571,42 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     }
   }
 
-  private void executeInsertQuery(
+  protected void executeInsertQuery(
       final SqlStatementLogger statementLogger,
       final SessionEventListenerManager statsCollector,
-      final String segmentValue,
+      final String[] segmentValues,
       final Connection connection,
       final IntegralDataTypeHolder initialValue)
       throws SQLException {
     try (PreparedStatement insertPS =
         prepareStatement(connection, insertQuery, statementLogger, statsCollector)) {
-      LOG.tracef("binding parameter [%s] - [%s]", 1, segmentValue);
-      insertPS.setString(1, segmentValue);
-      initialValue.bind(insertPS, 2);
+      for (int segmentColumnIndex = 0;
+          segmentColumnIndex < segmentColumnNames.length;
+          segmentColumnIndex++) {
+        insertPS.setString(segmentColumnIndex + 1, segmentValues[segmentColumnIndex]);
+      }
+
+      initialValue.bind(insertPS, segmentColumnNames.length + 1);
       executeUpdate(insertPS, statsCollector);
     }
   }
 
-  private int executeUpdateQuery(
+  protected int executeUpdateQuery(
       final SqlStatementLogger statementLogger,
       final SessionEventListenerManager statsCollector,
-      final String segmentValue,
+      final String[] segmentValues,
       final Connection connection,
       final IntegralDataTypeHolder updateValue)
       throws SQLException {
     try (PreparedStatement updatePS =
         prepareStatement(connection, updateQuery, statementLogger, statsCollector)) {
       updateValue.bind(updatePS, 1);
-      updatePS.setString(2, segmentValue);
+
+      for (int segmentColumnIndex = 0;
+          segmentColumnIndex < segmentColumnNames.length;
+          segmentColumnIndex++) {
+        updatePS.setString(segmentColumnIndex + 2, segmentValues[segmentColumnIndex]);
+      }
       return executeUpdate(updatePS, statsCollector);
     } catch (SQLException e) {
       LOG.unableToUpdateQueryHiValue(renderedTableName, e);
@@ -533,36 +649,57 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     }
   }
 
-  private String getSegmentValue(Object object) {
-    try {
-      final Field field = FieldUtils.getField(object.getClass(), segmentValueFieldName, true);
-      return Objects.toString(field.get(object));
-    } catch (Exception e) {
-      throw new IllegalArgumentException(
-          "Unable to get value for field '" + segmentValueFieldName + "'", e);
-    }
+  private String[] getSegmentValues(final Object object) {
+    return Stream.of(segmentValueFieldNames)
+        .map(
+            (segmentValueFieldName) -> {
+              try {
+                final Field field =
+                    FieldUtils.getField(object.getClass(), segmentValueFieldName, true);
+                return Objects.toString(field.get(object));
+              } catch (Exception e) {
+                throw new IllegalArgumentException(
+                    "Unable to get value for field '" + segmentValueFieldName + "'", e);
+              }
+            })
+        .toArray(size -> new String[size]);
   }
 
   @Override
   public String[] sqlCreateStrings(Dialect dialect) throws HibernateException {
-    return new String[] {
-      dialect.getCreateTableString()
-          + ' '
-          + renderedTableName
-          + " ( "
-          + segmentColumnName
-          + ' '
-          + dialect.getTypeName(Types.VARCHAR, segmentColumnSize, 0, 0)
-          + " not null "
-          + ", "
-          + valueColumnName
-          + ' '
-          + dialect.getTypeName(Types.BIGINT)
-          + ", primary key ( "
-          + segmentColumnName
-          + " ) )"
-          + dialect.getTableTypeString()
-    };
+    final StringBuilder queryBuilder =
+        new StringBuilder()
+            .append(dialect.getCreateTableString())
+            .append(" ")
+            .append(renderedTableName)
+            .append(" ( ");
+    final int maxSegmentColumnIndex = segmentColumnNames.length - 1;
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder
+          .append(segmentColumnNames[segmentColumnIndex])
+          .append(" ")
+          .append(dialect.getTypeName(Types.VARCHAR, segmentColumnSizes[segmentColumnIndex], 0, 0))
+          .append(" not null ");
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+      queryBuilder.append(", ");
+    }
+    queryBuilder
+        .append(valueColumnName)
+        .append(" ")
+        .append(dialect.getTypeName(Types.BIGINT))
+        .append(", primary key ( ");
+    for (int segmentColumnIndex = 0; ; segmentColumnIndex++) {
+      queryBuilder.append(segmentColumnNames[segmentColumnIndex]);
+      if (segmentColumnIndex == maxSegmentColumnIndex) {
+        break;
+      }
+      queryBuilder.append(", ");
+    }
+    queryBuilder.append(" ) )").append(dialect.getTableTypeString());
+
+    return new String[] {queryBuilder.toString()};
   }
 
   @Override

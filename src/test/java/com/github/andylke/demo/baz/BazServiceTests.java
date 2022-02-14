@@ -23,19 +23,21 @@ class BazServiceTests {
 
   @Test
   void save() {
-    final Baz result = bazService.save("one", Thread.currentThread().getName());
+    final Baz result = bazService.save("one", "en", Thread.currentThread().getName());
     System.out.println(
         "Saved " + ReflectionToStringBuilder.toString(result, ToStringStyle.NO_CLASS_NAME_STYLE));
   }
 
   @Test
   void concurrentSaves() throws InterruptedException, ExecutionException {
-    final String[] codes = new String[] {"a", "b", "a", "b", "a"};
+    final String[] codes = new String[] {"a", "a", "a", "a", "a"};
+    final String[] languageCodes = new String[] {"en", "cn", "en", "cn", "en"};
     final List<CompletableFuture<?>> futures = new ArrayList<>();
 
     final CountDownLatch countDownLatch = new CountDownLatch(codes.length);
     for (int countDown = (int) countDownLatch.getCount(); countDown > 0; countDown--) {
       final String code = codes[countDown - 1];
+      final String languageCode = languageCodes[countDown - 1];
 
       futures.add(
           CompletableFuture.runAsync(
@@ -46,7 +48,8 @@ class BazServiceTests {
                 } catch (InterruptedException e) {
                 }
 
-                final Baz result = bazService.save(code, Thread.currentThread().getName());
+                final Baz result =
+                    bazService.save(code, languageCode, Thread.currentThread().getName());
                 System.out.println(
                     "Saved "
                         + ReflectionToStringBuilder.toString(

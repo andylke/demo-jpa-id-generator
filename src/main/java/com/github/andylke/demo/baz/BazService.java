@@ -10,9 +10,10 @@ public class BazService {
   @Autowired private BazRepository fooRepository;
 
   @Transactional
-  public Baz save(final String code, final String text) {
+  public Baz save(final String code, final String languageCode, final String text) {
     final Baz baz = new Baz();
     baz.setCode(code);
+    baz.setLanguageCode(languageCode);
     baz.setText(text);
     return fooRepository.saveAndFlush(baz);
   }
