@@ -78,6 +78,15 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   /** The default {@link #SEGMENT_COLUMN_PARAM} value */
   public static final String DEFAULT_SEGMENT_COLUMN_NAME = "sequence_name";
 
+  /**
+   * Indicates the length of the column defined by {@link #SEGMENT_COLUMN_PARAM}. Used in schema
+   * export. The default value is {@link #DEFAULT_SEGMENT_COLUMN_SIZE}
+   */
+  public static final String SEGMENT_COLUMN_SIZE_PARAM = "segment_column_size";
+
+  /** The default {@link #SEGMENT_COLUMN_SIZE_PARAM} value */
+  public static final int DEFAULT_SEGMENT_COLUMN_SIZE = 255;
+
   /** The name of the object field name used as the segment value. */
   public static final String SEGMENT_VALUE_FIELD_NAME_PARAM = "segment_value_field_name";
 
@@ -89,15 +98,6 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
 
   /** The default {@link #VALUE_COLUMN_PARAM} value */
   public static final String DEFAULT_VALUE_COLUMN = "next_val";
-
-  /**
-   * Indicates the length of the column defined by {@link #SEGMENT_COLUMN_PARAM}. Used in schema
-   * export. The default value is {@link #DEFAULT_SEGMENT_LENGTH}
-   */
-  public static final String SEGMENT_LENGTH_PARAM = "segment_value_length";
-
-  /** The default {@link #SEGMENT_LENGTH_PARAM} value */
-  public static final int DEFAULT_SEGMENT_LENGTH = 255;
 
   /** Indicates the initial value to use. The default value is {@link #DEFAULT_INITIAL_VALUE} */
   public static final String INITIAL_PARAM = "initial_value";
@@ -125,8 +125,8 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   private String renderedTableName;
 
   private String segmentColumnName;
+  private int segmentColumnSize;
   private String segmentValueFieldName;
-  private int segmentValueLength;
 
   private String valueColumnName;
   private int initialValue;
@@ -155,8 +155,8 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
     qualifiedTableName = determineGeneratorTableName(params, jdbcEnvironment, serviceRegistry);
 
     segmentColumnName = determineSegmentColumnName(params, jdbcEnvironment);
+    segmentColumnSize = determineSegmentColumnSize(params);
     segmentValueFieldName = determineSegmentValueFieldName(params);
-    segmentValueLength = determineSegmentColumnSize(params);
 
     valueColumnName = determineValueColumnName(params, jdbcEnvironment);
     initialValue = determineInitialValue(params);
@@ -194,7 +194,7 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
               table,
               segmentColumnName,
               StringType.INSTANCE,
-              dialect.getTypeName(Types.VARCHAR, segmentValueLength, 0, 0));
+              dialect.getTypeName(Types.VARCHAR, segmentColumnSize, 0, 0));
       segmentColumn.setNullable(false);
       table.addColumn(segmentColumn);
 
@@ -351,7 +351,8 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
   }
 
   protected int determineSegmentColumnSize(Properties params) {
-    return ConfigurationHelper.getInt(SEGMENT_LENGTH_PARAM, params, DEFAULT_SEGMENT_LENGTH);
+    return ConfigurationHelper.getInt(
+        SEGMENT_COLUMN_SIZE_PARAM, params, DEFAULT_SEGMENT_COLUMN_SIZE);
   }
 
   protected String determineValueColumnName(Properties params, JdbcEnvironment jdbcEnvironment) {
@@ -551,7 +552,7 @@ public class TableGeneratorSegmentByFields implements PersistentIdentifierGenera
           + " ( "
           + segmentColumnName
           + ' '
-          + dialect.getTypeName(Types.VARCHAR, segmentValueLength, 0, 0)
+          + dialect.getTypeName(Types.VARCHAR, segmentColumnSize, 0, 0)
           + " not null "
           + ", "
           + valueColumnName

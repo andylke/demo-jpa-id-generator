@@ -26,6 +26,7 @@ public class Baz implements Serializable {
       parameters = {
         @Parameter(name = "table_name", value = "baz_seq"),
         @Parameter(name = "segment_column_name", value = "code"),
+        @Parameter(name = "segment_column_size", value = "10"),
         @Parameter(name = "segment_value_field_name", value = "code"),
         @Parameter(name = "value_column_name", value = "next_id")
       })
