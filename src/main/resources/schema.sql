@@ -1,10 +1,10 @@
 
-
 DROP TABLE IF EXISTS foo;
 
 CREATE TABLE foo (
-  id INT NOT NULL PRIMARY KEY,
-  text VARCHAR(50) NOT NULL
+  id INT NOT NULL,
+  text VARCHAR(50) NOT NULL,
+  PRIMARY KEY (id)
 );
  
 DROP TABLE IF EXISTS foo_seq;
@@ -13,5 +13,37 @@ CREATE TABLE foo_seq (
   next_id INT NOT NULL PRIMARY KEY
 );
 
-INSERT INTO foo_seq (next_id) VALUES(1);
+
+DROP TABLE IF EXISTS bar;
+
+CREATE TABLE bar (
+  id INT NOT NULL,
+  text VARCHAR(50) NOT NULL,
+  PRIMARY KEY (id)
+);
+ 
+DROP TABLE IF EXISTS bar_seq;
+
+CREATE TABLE bar_seq (
+  name VARCHAR(10) NOT NULL PRIMARY KEY,
+  next_id INT NOT NULL
+);
+
+
+DROP TABLE IF EXISTS baz;
+
+CREATE TABLE baz (
+  id INT NOT NULL,
+  code VARCHAR(10) NOT NULL,
+  text VARCHAR(50) NOT NULL,
+  PRIMARY KEY (id, code)
+);
+ 
+DROP TABLE IF EXISTS baz_seq;
+
+CREATE TABLE baz_seq (
+  code VARCHAR(10) NOT NULL PRIMARY KEY,
+  next_id INT NOT NULL
+);
+
 
