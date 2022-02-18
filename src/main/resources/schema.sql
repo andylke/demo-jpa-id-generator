@@ -36,9 +36,9 @@ CREATE TABLE bar_seq (
 DROP TABLE IF EXISTS baz;
 
 CREATE TABLE baz (
-  id INT NOT NULL,
-  code VARCHAR(10) NOT NULL,
-  language_code VARCHAR(2) NOT NULL,
+  id decimal(9,0) NOT NULL,
+  code decimal(3,0) NOT NULL,
+  language_code decimal(3,0) NOT NULL,
   text VARCHAR(50) NOT NULL,
   PRIMARY KEY (id, code, language_code)
 );
@@ -46,8 +46,8 @@ CREATE TABLE baz (
 DROP TABLE IF EXISTS baz_seq;
 
 CREATE TABLE baz_seq (
-  code VARCHAR(10) NOT NULL,
-  language_code VARCHAR(2) NOT NULL,
+  code VARCHAR(3) NOT NULL,
+  language_code VARCHAR(3) NOT NULL,
   next_id INT NOT NULL,
   PRIMARY KEY (code, language_code)
 );

@@ -1,5 +1,6 @@
 package com.github.andylke.demo.baz;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -23,15 +24,16 @@ class BazServiceTests {
 
   @Test
   void save() {
-    final Baz result = bazService.save("one", "en", Thread.currentThread().getName());
+    final Baz result =
+        bazService.save(new BigDecimal("1"), new BigDecimal("1"), Thread.currentThread().getName());
     System.out.println(
         "Saved " + ReflectionToStringBuilder.toString(result, ToStringStyle.NO_CLASS_NAME_STYLE));
   }
 
   @Test
   void concurrentSaves() throws InterruptedException, ExecutionException {
-    final String[] codes = new String[] {"a", "a", "a", "a", "a"};
-    final String[] languageCodes = new String[] {"en", "cn", "en", "cn", "en"};
+    final String[] codes = new String[] {"2", "2", "2", "2", "2"};
+    final String[] languageCodes = new String[] {"3", "4", "3", "4", "3"};
     final List<CompletableFuture<?>> futures = new ArrayList<>();
 
     final CountDownLatch countDownLatch = new CountDownLatch(codes.length);
@@ -49,7 +51,10 @@ class BazServiceTests {
                 }
 
                 final Baz result =
-                    bazService.save(code, languageCode, Thread.currentThread().getName());
+                    bazService.save(
+                        new BigDecimal(code),
+                        new BigDecimal(languageCode),
+                        Thread.currentThread().getName());
                 System.out.println(
                     "Saved "
                         + ReflectionToStringBuilder.toString(
